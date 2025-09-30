@@ -1,0 +1,45 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main   # change if your deploy branch is different
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:   # map GitHub secrets to environment variables
+      SERVER_HOST: ${{ secrets.SERVER_HOST }}
+      SERVER_USER: ${{ secrets.SERVER_USER }}
+      SERVER_PASS: ${{ secrets.SERVER_PASS }}
+      SERVER_PATH: ${{ secrets.SERVER_PATH }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install sshpass
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
+      - name: Prepare server directory and upload
+        run: |
+          set -e  # stop if anything fails
+
+          # Ensure directory exists, then clear contents
+          sshpass -p "$SERVER_PASS" ssh \
+            -o PreferredAuthentications=password \
+            -o PubkeyAuthentication=no \
+            -o StrictHostKeyChecking=no \
+            $SERVER_USER@$SERVER_HOST \
+            "bash -lc 'mkdir -p \"$SERVER_PATH\" && rm -rf \"$SERVER_PATH\"/*'"
+
+          # Upload all files from repo root
+          sshpass -p "$SERVER_PASS" scp \
+            -o PreferredAuthentications=password \
+            -o PubkeyAuthentication=no \
+            -o StrictHostKeyChecking=no \
+            -r ./* \
+            $SERVER_USER@$SERVER_HOST:"$SERVER_PATH"
+
+      - name: Confirm deployment
+        run: echo "✅ Deployment finished"
