@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PnS FEA</title>
+</head>
+<body>
+  <div id="container"></div>
+  <input id="fileInput" type="file" style="visibility:hidden;position: absolute;" />
+  <div class="loader" id="loading-screen" style="display: none;"></div>
+  <style>
+		body {
+		  color: #fff;
+		  font-family: Monospace;
+		  font-size: 13px;
+		  text-align: center;
+
+		  background-color: #242424;
+		  margin: 0px;
+		  overflow: hidden;
+		}
+
+		#info {
+		  color: #ffffff;
+		  position: absolute;
+		  top: 0px;
+		  width: 100%;
+		  padding: 5px;
+		}
+
+		a {
+		  color: gold;
+		}
+
+		#oldie {
+		  font-family: monospace;
+		  font-size: 13px;
+
+		  text-align: center;
+		  background: rgb(0, 0, 50);
+		  color: #fff;
+		  padding: 1em;
+
+		  width: 475px;
+		  margin: 5em auto 0;
+
+		  display: none;
+		}
+
+	</style>
+    
+    <style>
+        /* HTML: <div class="loader"></div> */
+        .loader {
+        width: 50px;
+        aspect-ratio: 1;
+        border-radius: 50%;
+        border: 8px solid #0000;
+        border-right-color: #ffffffff;
+        position: absolute;
+        animation: l24 1s infinite linear;
+        top: 50%;
+        left: 50%;
+        }
+        .loader:before,
+        .loader:after {
+        content: "";
+        position: absolute;
+        inset: -8px;
+        border-radius: 50%;
+        border: inherit;
+        animation: inherit;
+        animation-duration: 2s;
+        }
+        .loader:after {
+        animation-duration: 4s;
+        }
+        @keyframes l24 {
+        100% {transform: rotate(1turn)}
+        }
+    </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.176.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.176.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    document.getElementById('fileInput').addEventListener('change', loadFile);
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { Patch } from './patch.js';
+    import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+
+    let camera, scene, renderer, controls, gui;
+    let mesh;
+    const clock = new THREE.Clock();
+
+    const globalUniforms = {
+        timestep: { value: 0 },
+        min_val: { value: 0 },
+        max_val: { value: 0 },
+        num_timesteps: 0,
+        colormap: { value: 0 }
+    };
+
+    let guiState;
+
+    function setupGui() {
+      guiState = {
+        timestep: 0,
+        colormap: 0,
+        'fileInput': function () {
+            const fileElem = document.getElementById('fileInput')
+            fileElem.click()
+        },
+      };
+      gui = new GUI();
+      gui.add(guiState, 'fileInput').name('Load Data File');
+      gui.add(guiState, 'timestep', 0, globalUniforms.num_timesteps - 1, 1).onChange((val) => {
+        globalUniforms.timestep.value = val;
+      });
+      gui.add(guiState, 'colormap', { Rainbow: 0, CoolToWarm: 1, BlackBody: 2, GrayScale: 3}).onChange((val) => {
+        globalUniforms.colormap.value = val;
+      });
+    }
+
+    function loadFile(event){
+        const file = event.target.files[0];
+        if(!file) return;
+        document.getElementById('loading-screen').style.display = 'block';
+        document.getElementById('container').style.display = 'none';
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const contents = event.target.result;
+            if(mesh){
+                scene.remove(mesh);
+            }
+            mesh = new THREE.Group();
+            scene.add(mesh);
+            globalUniforms.timestep.value = 0;
+            guiState.timestep = 0;
+            // File Format:
+            // num_patches num_timesteps min_val max_val
+            // For each patch:
+            // uDeg vDeg
+            // c0x c0y c0z c1x c1y c1z ...
+            // f0_0 f0_1 f0_2 ... f0_n
+            // f1_0 f1_1 f1_2 ... f1_n
+            // ...
+            console.log(contents);
+            const tokens = contents.split(/\s+/).map(parseFloat);
+            let index = 0;
+            const num_patches = tokens[index++];
+            globalUniforms.num_timesteps = tokens[index++];
+            globalUniforms.min_val.value = tokens[index++];
+            globalUniforms.max_val.value = tokens[index++];
+            for(let p=0; p<num_patches; p++){
+                const uDeg = tokens[index++];
+                const vDeg = tokens[index++];
+                const num_cps = (uDeg + 1) * (vDeg + 1);
+                const cps = tokens.slice(index, index + num_cps * 3);
+                index += num_cps * 3;
+                const field = [];
+                for(let t=0; t<globalUniforms.num_timesteps; t++){
+                    const field_t = tokens.slice(index, index + num_cps);
+                    index += num_cps;
+                    field.push(field_t);
+                }
+                const patch = new Patch({ u: uDeg, v: vDeg, cps, field }, globalUniforms);
+                mesh.add(patch.mesh);
+            }
+            if(gui){
+                gui.destroy();
+            }
+            setupGui();
+            document.getElementById('loading-screen').style.display = 'none';
+            document.getElementById('container').style.display = 'block';
+        };
+        reader.readAsText(file);
+    }
+
+    function init() {
+      // CAMERA
+      camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+      camera.position.set(-5, 5, 5);
+
+      // SCENE
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x111111);
+
+      const gridHelper = new THREE.GridHelper(2, 16);
+      scene.add(gridHelper);
+
+      // LIGHT
+      const light = new THREE.DirectionalLight(0xffffff, 5);
+      light.position.set(0.5, 1, 0.5);
+      scene.add(light);
+
+      // RENDERER
+      renderer = new THREE.WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(window.devicePixelRatio);
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setAnimationLoop(animate);
+      container.appendChild(renderer.domElement);
+
+      // CONTROLS
+      controls = new OrbitControls(camera, renderer.domElement);
+
+      // EVENTS
+      window.addEventListener('resize', onWindowResize);
+
+      // Setup scene content
+      mesh = new THREE.Group();
+      scene.add(mesh);
+
+      // GUI
+      setupGui();
+    }
+
+    function onWindowResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    function animate() {
+      renderer.render(scene, camera);
+    }
+
+    init();
+  </script>
+</body>
+</html>
