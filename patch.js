@@ -97,7 +97,10 @@ export class Patch {
       return res;
     }
     float bernstein(int i, int n, float t) {
-      return binomialCoeff(n, i) * pow(t, float(i)) * pow(1.0 - t, float(n - i));
+      float coeff = binomialCoeff(n, i);
+      float ti = (i == 0) ? 1.0 : pow(t, float(i));
+      float omt = (n - i == 0) ? 1.0 : pow(1.0 - t, float(n - i));
+      return coeff * ti * omt;
     }
 
     void main() {
@@ -130,22 +133,68 @@ export class Patch {
     varying float vScalar;
 
     vec3 applyColormap(float t) {
-      t = clamp(t, 0.0, 1.0);
-      if (colormap == 0) {
-        return vec3( sin(6.28318*t), sin(6.28318*t+2.094), sin(6.28318*t+4.188) )*0.5+0.5;
-      }
-      else if (colormap == 1) {
-        return mix( mix(vec3(0,0,1), vec3(1,1,1), t), vec3(1,0,0), t );
-      }
-      else if (colormap == 2) {
-        return vec3( clamp(3.0*t,0.0,1.0),
-                     clamp(3.0*t-1.0,0.0,1.0),
-                     clamp(3.0*t-2.0,0.0,1.0) );
-      }
-      else {
-        return vec3(t);
-      }
-    }
+  t = clamp(t, 0.0, 1.0);
+
+  const float stops[5] = float[5](0.0, 0.2, 0.5, 0.8, 1.0);
+
+  // rainbow anchors
+  const vec3 rainbow[5] = vec3[5](
+    vec3(0.0, 0.0, 1.0),
+    vec3(0.0, 1.0, 1.0),
+    vec3(0.0, 1.0, 0.0),
+    vec3(1.0, 1.0, 0.0),
+    vec3(1.0, 0.0, 0.0)
+  );
+
+  // cool-to-warm anchors
+  const vec3 ctw[5] = vec3[5](
+    vec3(60.0/255.0, 78.0/255.0, 194.0/255.0),
+    vec3(155.0/255.0, 188.0/255.0, 255.0/255.0),
+    vec3(220.0/255.0, 220.0/255.0, 220.0/255.0),
+    vec3(246.0/255.0, 163.0/255.0, 133.0/255.0),
+    vec3(180.0/255.0,   4.0/255.0,  38.0/255.0)
+  );
+
+  // blackbody anchors
+  const vec3 bb[5] = vec3[5](
+    vec3(0.0, 0.0, 0.0),
+    vec3(120.0/255.0,   0.0,        0.0),
+    vec3(230.0/255.0,  50.0/255.0,  0.0),
+    vec3(1.0,           1.0,        0.0),
+    vec3(1.0,           1.0,        1.0)
+  );
+
+  // grayscale anchors
+  const vec3 gs[5] = vec3[5](
+    vec3(0.0, 0.0, 0.0),
+    vec3(64.0/255.0, 64.0/255.0, 64.0/255.0),
+    vec3(127.0/255.0, 127.0/255.0, 128.0/255.0),
+    vec3(191.0/255.0, 191.0/255.0, 191.0/255.0),
+    vec3(1.0, 1.0, 1.0)
+  );
+
+  // find interval
+  int idx = 0;
+  for (int k = 0; k < 4; ++k) {
+    if (t <= stops[k+1]) { idx = k; break; }
+  }
+  float alpha = (t - stops[idx]) / (stops[idx+1] - stops[idx]);
+
+  vec3 c0, c1;
+  if (colormap == 0) {
+    c0 = rainbow[idx]; c1 = rainbow[idx+1];
+  } else if (colormap == 1) {
+    c0 = ctw[idx]; c1 = ctw[idx+1];
+  } else if (colormap == 2) {
+    c0 = bb[idx]; c1 = bb[idx+1];
+  } else {
+    c0 = gs[idx]; c1 = gs[idx+1];
+  }
+
+  return mix(c0, c1, alpha);
+}
+
+
 
     void main() {
       float tval = (vScalar - min_val) / (max_val - min_val);

@@ -97,6 +97,7 @@
 
     let camera, scene, renderer, controls, gui;
     let mesh;
+    let isPlaying = false;
     const clock = new THREE.Clock();
 
     const globalUniforms = {
@@ -111,6 +112,7 @@
 
     function setupGui() {
       guiState = {
+        speed: 1,
         timestep: 0,
         colormap: 0,
         'fileInput': function () {
@@ -122,10 +124,14 @@
       gui.add(guiState, 'fileInput').name('Load Data File');
       gui.add(guiState, 'timestep', 0, globalUniforms.num_timesteps - 1, 1).onChange((val) => {
         globalUniforms.timestep.value = val;
-      });
+      }).listen();
       gui.add(guiState, 'colormap', { Rainbow: 0, CoolToWarm: 1, BlackBody: 2, GrayScale: 3}).onChange((val) => {
         globalUniforms.colormap.value = val;
       });
+      gui.add(guiState, 'speed', 0, 5, 0.1).listen();
+      gui.add({ play: function() {
+        isPlaying = !isPlaying;
+      }}, 'play').name('Play/Pause');
     }
 
     function loadFile(event){
@@ -151,7 +157,6 @@
             // f0_0 f0_1 f0_2 ... f0_n
             // f1_0 f1_1 f1_2 ... f1_n
             // ...
-            console.log(contents);
             const tokens = contents.split(/\s+/).map(parseFloat);
             let index = 0;
             const num_patches = tokens[index++];
@@ -190,10 +195,10 @@
 
       // SCENE
       scene = new THREE.Scene();
-      scene.background = new THREE.Color(0x111111);
+      scene.background = new THREE.Color(0xffffff);
 
       const gridHelper = new THREE.GridHelper(2, 16);
-      scene.add(gridHelper);
+      // scene.add(gridHelper);
 
       // LIGHT
       const light = new THREE.DirectionalLight(0xffffff, 5);
@@ -226,8 +231,19 @@
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     }
-
+    let lastTime = Date.now()
     function animate() {
+      const now = Date.now()
+      const dt = (now - lastTime) * guiState.speed / 100;
+      
+      if(isPlaying){
+        globalUniforms.timestep.value += dt;
+        if(globalUniforms.timestep.value >= globalUniforms.num_timesteps){
+            globalUniforms.timestep.value = 0;
+        }
+        guiState.timestep = globalUniforms.timestep.value;
+      }
+      lastTime = now;
       renderer.render(scene, camera);
     }
 
