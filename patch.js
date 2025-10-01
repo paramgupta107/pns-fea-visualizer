@@ -49,7 +49,7 @@ export class Patch {
   }
 
   createMesh() {
-    const geometry = this.createGeometry(30);
+    const geometry = this.createGeometry(32);
 
     const numCPs = (this.uDeg + 1) * (this.vDeg + 1);
     const texData = new Float32Array(numCPs * 4 * this.globalUniforms.num_timesteps);
